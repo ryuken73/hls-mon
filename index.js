@@ -44,7 +44,6 @@ const parseM3U8 = manifest => {
 const getChunkManifest = async (base, lastPart) => {
     try {
         const fullUrl = lastPart.startsWith('http') ? lastPart : `${base}/${lastPart}`;
-        console.log('#fullUrl = ', fullUrl);
         const m3u8 = await getPlaylist(fullUrl);
         const manifest = parseM3U8(m3u8);
         if(manifest.segments.length === 0){
@@ -64,7 +63,23 @@ const main = async () => {
     try {
         const manifest = await getChunkManifest(base, lastPart);
         console.log(manifest)
-
+        const firstSegment = manifest.segments[0];
+        let lastTsFile = firstSegment.uri.split('?').shift();
+        let count = 0;
+        console.log(Date.now(), firstSegment.duration, lastTsFile, manifest.targetDuration);
+        setInterval(async () => {
+            const nextManifest = await getChunkManifest(base, lastPart);
+            const segment = nextManifest.segments[0];
+            const nextTsFile = segment.uri.split('?').shift();
+            if(lastTsFile === nextTsFile){
+                count++;
+                console.log(count);
+            } else {
+                console.log(Date.now(),'changed:',count, segment.duration, lastTsFile, nextManifest.targetDuration);
+                count=0;
+                lastTsFile = nextTsFile;
+            }
+        },1000)
     } catch (err){
         console.error(err)
     }
