@@ -1,22 +1,36 @@
 const { 
     HLS_URL,
     PLAYLIST_GET_TIMEOUT=1000,
+    TS_COUNT_TO_KEEP=10
  } = require('./config.json')
 
-const path = require('path')
+const path = require('path');
+const debug = require('debug');
 const axios = require('axios').default;
 const m3u8Parser = require('m3u8-parser');
+const { memoryUsage } = require('process');
+
+const logger = {
+    'debug': debug('debug'),
+    'info': debug('info'),
+    'warn': debug('warn'),
+    'error': debug('error'),
+}
 
 const getMonitorUrl = () => HLS_URL;
-
 const splitLastString = (string, sep='/') => {
     const array = string.split(sep);
     const lastElement = array.pop();
     return [array.join(sep), lastElement];
 }
+const splitFirtString = (string, sep='/') => {
+    const array = string.split(sep);
+    const [firstElement, ...rest] = array;
+    return [firstElement, ...rest];
+}
 
 const getPlaylist = async (url, timeout=PLAYLIST_GET_TIMEOUT,) => {
-    console.log(`get playlist:`, url)
+    logger.debug(`get playlist: ${url}`);
     try {
         const response = await axios.get(url);
         return response.data
@@ -58,28 +72,42 @@ const getChunkManifest = async (base, lastPart) => {
 
 const main = async () => {
     const url = getMonitorUrl();
-    const [base, lastPart] = splitLastString(url, '/');
-    console.log(base, lastPart)
+    const [urlBase, urlLastPart] = splitLastString(url, '/');
+    logger.debug(urlBase, urlLastPart)
     try {
-        const manifest = await getChunkManifest(base, lastPart);
-        console.log(manifest)
-        const firstSegment = manifest.segments[0];
-        let lastTsFile = firstSegment.uri.split('?').shift();
-        let count = 0;
-        console.log(Date.now(), firstSegment.duration, lastTsFile, manifest.targetDuration);
-        setInterval(async () => {
-            const nextManifest = await getChunkManifest(base, lastPart);
-            const segment = nextManifest.segments[0];
-            const nextTsFile = segment.uri.split('?').shift();
-            if(lastTsFile === nextTsFile){
-                count++;
-                console.log(count);
-            } else {
-                console.log(Date.now(),'changed:',count, segment.duration, lastTsFile, nextManifest.targetDuration);
-                count=0;
-                lastTsFile = nextTsFile;
-            }
-        },1000)
+        const manifest = await getChunkManifest(urlBase, urlLastPart);
+        const recentTSFiles = manifest.segments.map(segment => {
+            const [urlPart, filePart] = splitLastString(segment.uri, '/');
+            const tsFileName = splitFirtString(filePart, '?')
+            return tsFileName;
+        })
+        const getManifestInterval = (manifest.targetDuration / 2) * 1000;
+        let mergedTsFiles = [...recentTSFiles];
+        setInterval( async () => {
+            const manifest = await getChunkManifest(urlBase, urlLastPart);
+            const newTSFiles = manifest.segments.map(segment => {
+                const [urlPart, filePart] = splitLastString(segment.uri, '/');
+                const tsFileName = splitFirtString(filePart, '?')
+                return tsFileName;
+            })
+            mergedTsFiles = merge(mergedTsFiles, newTSFiles).splice(TS_COUNT_TO_KEEP * -1);
+        }, getManifestInterval);
+        // const firstSegment = manifest.segments[0];
+        // let lastTsFile = firstSegment.uri.split('?').shift();
+        // console.log(Date.now(), firstSegment.duration, lastTsFile, manifest.targetDuration);
+        // setInterval(async () => {
+        //     const nextManifest = await getChunkManifest(urlBase, urlLastPart);
+        //     const segment = nextManifest.segments[0];
+        //     const nextTsFile = segment.uri.split('?').shift();
+        //     if(lastTsFile === nextTsFile){
+        //         count++;
+        //         console.log(count);
+        //     } else {
+        //         console.log(Date.now(),'changed:',count, segment.duration, lastTsFile, nextManifest.targetDuration);
+        //         count=0;
+        //         lastTsFile = nextTsFile;
+        //     }
+        // },1000)
     } catch (err){
         console.error(err)
     }

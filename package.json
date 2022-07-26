@@ -5,6 +5,7 @@
   "license": "MIT",
   "dependencies": {
     "axios": "^0.27.2",
+    "debug": "^4.3.4",
     "m3u8-parser": "^4.7.1"
   }
 }
