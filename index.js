@@ -5,10 +5,10 @@ const {
  } = require('./config.json')
 
 const path = require('path');
+const { EventEmitter } = require('events');
 const debug = require('debug');
 const axios = require('axios').default;
 const m3u8Parser = require('m3u8-parser');
-const { memoryUsage } = require('process');
 
 const logger = {
     'debug': debug('debug'),
@@ -44,6 +44,8 @@ const getPlaylist = async (url, timeout=PLAYLIST_GET_TIMEOUT,) => {
     }
 }
 
+
+// m3u8 util
 const parseM3U8 = manifest => {
     try {
         const parser = new m3u8Parser.Parser();
@@ -70,28 +72,56 @@ const getChunkManifest = async (base, lastPart) => {
     }
 }
 
-const main = async () => {
-    const url = getMonitorUrl();
+const m3u8Check = new EventEmitter();
+const hlsLiveCheck = new EventEmitter();
+const downloadCheck = new EventEmitter();
+const tsFileCheck = new EventEmitter();
+
+m3u8Check.on('start', async (url, liveCheck=true) => {
     const [urlBase, urlLastPart] = splitLastString(url, '/');
     logger.debug(urlBase, urlLastPart)
     try {
         const manifest = await getChunkManifest(urlBase, urlLastPart);
         const recentTSFiles = manifest.segments.map(segment => {
-            const [urlPart, filePart] = splitLastString(segment.uri, '/');
-            const tsFileName = splitFirtString(filePart, '?')
+            const [, filePart] = splitLastString(segment.uri, '/');
+            const [tsFileName,] = splitFirtString(filePart, '?')
             return tsFileName;
         })
-        const getManifestInterval = (manifest.targetDuration / 2) * 1000;
-        let mergedTsFiles = [...recentTSFiles];
-        setInterval( async () => {
-            const manifest = await getChunkManifest(urlBase, urlLastPart);
-            const newTSFiles = manifest.segments.map(segment => {
-                const [urlPart, filePart] = splitLastString(segment.uri, '/');
-                const tsFileName = splitFirtString(filePart, '?')
-                return tsFileName;
-            })
-            mergedTsFiles = merge(mergedTsFiles, newTSFiles).splice(TS_COUNT_TO_KEEP * -1);
-        }, getManifestInterval);
+    console.log(recentTSFiles)
+    } catch (err){
+        console.error(err)
+    }
+
+})
+
+const main = async () => {
+    const url = getMonitorUrl();
+    m3u8Check.emit('start', {url, liveCheck:true});
+    m3u8Check.emit('success', (segments) => {
+        const {first, second} = segments;
+        hlsLiveCheck.emit('start', )
+    })
+    // const [urlBase, urlLastPart] = splitLastString(url, '/');
+    // logger.debug(urlBase, urlLastPart)
+    // try {
+    //     const manifest = await getChunkManifest(urlBase, urlLastPart);
+    //     const recentTSFiles = manifest.segments.map(segment => {
+    //         const [, filePart] = splitLastString(segment.uri, '/');
+    //         const tsFileName = splitFirtString(filePart, '?')
+    //         return tsFileName;
+    //     })
+    //     const getManifestInterval = (manifest.targetDuration / 2) * 1000;
+    //     let mergedTsFiles = [...recentTSFiles];
+    //     setInterval( async () => {
+    //         const manifest = await getChunkManifest(urlBase, urlLastPart);
+    //         const newTSFiles = manifest.segments.map(segment => {
+    //             const [, filePart] = splitLastString(segment.uri, '/');
+    //             const tsFileName = splitFirtString(filePart, '?')
+    //             return tsFileName;
+    //         })
+    //         mergedTsFiles = merge(mergedTsFiles, newTSFiles).splice(TS_COUNT_TO_KEEP * -1);
+    //     }, getManifestInterval);
+
         // const firstSegment = manifest.segments[0];
         // let lastTsFile = firstSegment.uri.split('?').shift();
         // console.log(Date.now(), firstSegment.duration, lastTsFile, manifest.targetDuration);
@@ -108,10 +138,9 @@ const main = async () => {
         //         lastTsFile = nextTsFile;
         //     }
         // },1000)
-    } catch (err){
-        console.error(err)
-    }
-
+    // } catch (err){
+        // console.error(err)
+    // }
 }
 
 main()
